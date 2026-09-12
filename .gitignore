@@ -1,0 +1,21 @@
+# Zig build artifacts
+.zig-cache/
+.zig-global-cache/
+zig-out/
+*.spv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Compiled shared library — rebuilt by `zig build`; the in-tree copy
+# (valkyr/valkyr_core.dll) is a build output, not a source file.
+valkyr/valkyr_core.dll
+valkyr/valkyr_core.pdb
+valkyr/libvalkyr_core.so
+valkyr/libvalkyr_core.dylib
