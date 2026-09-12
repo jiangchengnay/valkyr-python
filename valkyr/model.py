@@ -129,7 +129,9 @@ class Model:
             self._closed = True
 
     def __del__(self):
-        if hasattr(self, '_closed') and not self._closed:
+        # 防御：__init__ 在 create_engine 前失败（或对象经 __new__ 构造）
+        # 时可能没有 _handle；只在两者都齐备时才释放。
+        if hasattr(self, '_closed') and not self._closed and hasattr(self, '_handle'):
             _native.free_engine(self._handle)
 
     def __enter__(self):
