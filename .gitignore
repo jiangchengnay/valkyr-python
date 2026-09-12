@@ -19,3 +19,6 @@ valkyr/valkyr_core.dll
 valkyr/valkyr_core.pdb
 valkyr/libvalkyr_core.so
 valkyr/libvalkyr_core.dylib
+
+# Ad-hoc test / run logs
+*.log

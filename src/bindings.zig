@@ -194,6 +194,11 @@ fn drainToFinish(e: *Engine, out: []u8) !usize {
     var written: usize = 0;
     var idle_ticks: u32 = 0;
     const max_idle_ticks: u32 = 100;
+    // Wall-clock ceiling as a backstop against a wedged GPU / runner
+    // that never emits `finish`. Generous: a 28-layer model at
+    // 8 layers/tick with 256 new tokens fits comfortably in minutes.
+    const t_start = std.time.nanoTimestamp();
+    const max_total_ns: i128 = 10 * std.time.ns_per_min;
     while (true) {
         try e.run.tickInline();
         var had_event = false;
@@ -211,12 +216,23 @@ fn drainToFinish(e: *Engine, out: []u8) !usize {
                 .accepted, .arena_swap => {},
             }
         }
-        if (!had_event) {
+        // A request in flight legitimately produces long stretches of
+        // eventless ticks — the whole prefill phase (embedding every
+        // prompt token, one tick per 8 layers / 5 ms) emits nothing,
+        // so a long multi-turn prompt can take hundreds of eventless
+        // ticks before the first token. Counting those as "idle" made
+        // every long-prompt chat time out spuriously. Only count idle
+        // when the runner is truly idle (no active request AND nothing
+        // queued); that is the only state in which it will never emit.
+        const busy = e.run.active != null or e.run.backlog.items.len > 0;
+        if (!had_event and !busy) {
             idle_ticks += 1;
             if (idle_ticks > max_idle_ticks) return error.RunnerIdleTimeout;
         } else {
             idle_ticks = 0;
         }
+        const now = std.time.nanoTimestamp();
+        if (now - t_start > max_total_ns) return error.RunnerTimedOut;
     }
 }
 

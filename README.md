@@ -74,15 +74,24 @@ m.close()
 ```
 
 ```sh
-python tests/test_smoke.py     # 9 checks, no model required
+python tests/test_smoke.py     # 30 checks, no model required
 ```
+
+> Note: `tests/test_smoke.py` forces `sys.path` to this checkout so it
+> never silently tests a stale `pip install`ed copy. If you get odd
+> failures, make sure no old `valkyr` wheel shadows the local tree
+> (`python -m pip uninstall valkyr` if needed).
 
 ## Known gaps
 
 - `pyproject.toml` declares the wheel as `py3-none-any`, but
   `valkyr_core.dll` is a platform-specific Windows x64 binary. Other
   platforms must build their own; consider retagging as
-  `py3-none-win_amd64` before publishing.
+  `py3-none-win_amd64` before publishing (see `setup.py` — the wheel is
+  built from the checked-in sources, and `zig build` in this directory
+  produces the platform library).
 - `Model.load` on a model directory loads the **upstream-supported**
   families (Gemma / Llama / Mistral / Qwen3 / Qwen3.5 / Qwen2.5). The
   Qwen2.5 path is a local patch — see the engine project's git status.
+- `Model.generate(temperature=...)` is accepted but currently ignored
+  (the Session sampler is greedy-only).  Sampling is a roadmap item.
