@@ -1,7 +1,7 @@
 .{
     .name = .valkyr_core,
     .version = "0.1.0",
-    .fingerprint = 0x3c1a7e9d4b2f8056,
+    .fingerprint = 0xbb73b33444324542,
     .minimum_zig_version = "0.14.1",
     .dependencies = .{
         // The Valkyr engine, consumed as a Zig package. Its build.zig

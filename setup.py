@@ -32,10 +32,10 @@ def _find_zig():
     if override and os.path.isfile(override):
         return os.path.abspath(override)
 
-    # The workspace keeps a pinned Zig under <workspace>/.tools/. From
-    # projects/valkyr-python-bindings/ that is two levels up.
+    # The workspace keeps a pinned Zig under <workspace>/tools/zig-0.14.1/.
+    # From projects/valkyr-python-bindings/ that is two levels up.
     workspace = os.path.normpath(os.path.join(HERE, "..", ".."))
-    tools = os.path.join(workspace, ".tools")
+    tools = os.path.join(workspace, "tools", "zig-0.14.1")
     if os.path.isdir(tools):
         fn = "zig.exe" if os.name == "nt" else "zig"
         for dirpath, _, _ in os.walk(tools):
