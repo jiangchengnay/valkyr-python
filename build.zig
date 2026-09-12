@@ -49,4 +49,15 @@ pub fn build(b: *std.Build) void {
     shared.linkLibC();
 
     b.installArtifact(shared);
+
+    // ── Install into the Python package ───────────────────────────────
+    // `valkyr/_native.py` looks for the library *inside the package
+    // directory first*, then falls back to zig-out. Installing only to
+    // zig-out therefore lets a stale `valkyr/valkyr_core.dll` silently
+    // shadow a fresh build, which is exactly how a fixed recorder went
+    // unnoticed. Copy the artifact into the package tree so a plain
+    // `zig build` is always what Python loads.
+    const py_install = b.addUpdateSourceFiles();
+    py_install.addCopyFileToSource(shared.getEmittedBin(), b.fmt("valkyr/{s}", .{shared.out_filename}));
+    b.getInstallStep().dependOn(&py_install.step);
 }

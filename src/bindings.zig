@@ -112,22 +112,42 @@ fn engineCreate(dir_path: []const u8, precision: gpu_model.Precision, max_pos: u
         .max_new_tokens = max_new_tokens,
         .max_pos = @intCast(max_pos),
         .sampler = .greedy,
+        // Point the Session at the model directory so ChatTemplate can
+        // load the model's own Jinja `chat_template` from
+        // tokenizer_config.json. Without this the Session falls back to
+        // the family-hardcoded template, which fails with
+        // NoStartOfTurn for models whose chat markers are absent from
+        // the vocab (e.g. DeepSeek-R1: LlamaTokenizerFast under a Qwen2
+        // architecture — no <|im_start|>).
+        .model_dir = dir_path,
     };
     e.sess = try gpa.create(session_mod.Session);
     errdefer gpa.destroy(e.sess);
     e.sess.* = try session_mod.Session.init(gpa, e.ctx, e.gm, &e.tok, sess_cfg);
     errdefer e.sess.deinit();
 
-    const sets_per_step: u32 = @intCast(@max(@as(usize, 512), e.cpu.config.num_hidden_layers * 32));
+    // The recorder must be large enough for the worst-case single tick.
+    // `drainToFinish` runs a blocking call with `default_budget.layers`
+    // = 4096, so one tick can record every layer of a full forward plus
+    // the sample step. Sizing this below the budget overruns the Vulkan
+    // descriptor pool, which surfaces as VK_ERROR_OUT_OF_POOL_MEMORY
+    // (-1000069000) at submit time. Mirror `valkyr --serve`, which uses
+    // 4096 sets / 16384 descriptors for the same blocking usage.
     e.rec = try gpa.create(recorder_mod.Recorder);
     errdefer gpa.destroy(e.rec);
-    e.rec.* = try recorder_mod.Recorder.init(e.ctx, sets_per_step, 2048);
+    e.rec.* = try recorder_mod.Recorder.init(e.ctx, 4096, 16384);
     errdefer e.rec.deinit();
 
     const rcfg = runner_mod.RunnerConfig{
         .default_max_tokens = max_new_tokens,
         // Blocking Python calls: let one tick chew a whole model forward.
-        .default_budget = .{ .either = .{ .layers = 4096, .microseconds = 86_400_000_000 } },
+        // NOTE: `layers` must stay within the recorder's 4096-set pool
+        // (see Recorder.init above). 4096 layers is fine for the 28-layer
+        // Qwen3-0.6B but each layer dispatches several kernels, so the
+        // layer cap alone does not bound the set count. Keep the µs cap
+        // as the primary bound — matching `valkyr --serve`, the only
+        // configuration verified end-to-end against the engine.
+        .default_budget = .{ .either = .{ .layers = 8, .microseconds = 5_000 } },
     };
     e.run = try gpa.create(runner_mod.InferenceRunner);
     errdefer gpa.destroy(e.run);
