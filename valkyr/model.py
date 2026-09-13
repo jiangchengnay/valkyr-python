@@ -107,18 +107,100 @@ class Model:
         j = _json.dumps(messages, ensure_ascii=False)
         return _native.chat(self._handle, j, max_tokens)
 
-    def train_lora(self, dataset, epochs=3, lr=1e-4, **kwargs):
-        """LoRA fine-tuning (not yet wired in v0.1).
+    # ── LoRA fine-tuning (Vulkan) ───────────────────────────────────
 
-        Raises ``NotImplementedError``.  Use the CLI ``valkyr --finetune``
-        in the meantime.
+    _LORA_BITS = {
+        "q": 1 << 0, "k": 1 << 1, "v": 1 << 2, "o": 1 << 3,
+        "gate": 1 << 4, "up": 1 << 5, "down": 1 << 6,
+    }
+    _LORA_SHORTHANDS = {
+        "all_attn": (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3),
+        "all_ffn": (1 << 4) | (1 << 5) | (1 << 6),
+        "all": (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6),
+    }
+
+    @staticmethod
+    def _parse_lora_targets(spec):
+        """'q,k,v,o,gate,up,down' or shorthand → bitmask (engine layout)."""
+        if isinstance(spec, int):
+            return spec
+        mask = 0
+        for tok in spec.replace(" ", "").replace("-", "_").split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            if tok in Model._LORA_SHORTHANDS:
+                mask |= Model._LORA_SHORTHANDS[tok]
+            elif tok in Model._LORA_BITS:
+                mask |= Model._LORA_BITS[tok]
+            else:
+                raise ValueError(
+                    f"unknown LoRA target {tok!r}; choose from "
+                    f"{sorted(Model._LORA_BITS)} or {sorted(Model._LORA_SHORTHANDS)}"
+                )
+        if mask == 0:
+            raise ValueError("LoRA targets mask is empty")
+        return mask
+
+    def train_lora(self, examples, output, steps=30, lr=1e-5, rank=16,
+                   alpha=32.0, targets="all_attn", n_pos=16, rotate=False,
+                   probe=None, n_gen=20):
+        """LoRA fine-tuning on the Vulkan GPU.
+
+        Parameters
+        ----------
+        examples : list of str
+            Training texts (tokenized with the model's tokenizer and
+            packed into windows with the EOS token as separator).
+        output : str
+            Path for the resulting ``.lvkpt`` LoRA checkpoint.
+        steps : int
+            Number of Adam steps (default 30).
+        lr : float
+            Learning rate (default 1e-5).
+        rank : int
+            LoRA rank (default 16).
+        alpha : float
+            LoRA alpha (default 32.0).
+        targets : str or int
+            Projections to tune: comma list of
+            ``q,k,v,o,gate,up,down`` or a shorthand
+            ``all_attn`` / ``all_ffn`` / ``all`` (default ``all_attn``).
+        n_pos : int
+            Training window length (default 16).
+        rotate : bool
+            Cycle through dataset batches each step (default False =
+            single-batch overfit on the first window).
+        probe : str or None
+            Optional text sampled (greedy) before and after training to
+            show the model has shifted.
+        n_gen : int
+            Probe sample length in tokens (default 20).
+
+        Returns
+        -------
+        str
+            Training summary (CE before/after, ms/step, probe samples).
+
+        Notes
+        -----
+        The engine's trainer supports full-attention models **without
+        attention bias** (Qwen3-class). Qwen2/Qwen2.5 (which carry
+        q/k/v bias) raise ``RuntimeError`` with
+        ``AttentionBiasNotSupported`` — train those with a PyTorch
+        backend (see ``projects/minilora`` CPU/DML path) instead.
         """
-        raise NotImplementedError(
-            "train_lora is not wired up in the Python binding v0.1. "
-            "Valkyr exposes low-level LoRA kernels (recordLoraForward/Backward) "
-            "but no high-level training loop yet. Use the CLI::\n\n"
-            "  valkyr --finetune <model-dir> --lora-ckpt <lora.ckpt>\n\n"
-            "Tracked as the next milestone."
+        if getattr(self, '_closed', False):
+            raise RuntimeError("model is closed")
+        if not isinstance(examples, (list, tuple)) or not all(
+                isinstance(x, str) for x in examples):
+            raise TypeError("examples must be a list of strings")
+        if not isinstance(output, str) or not output:
+            raise ValueError("output must be a .lvkpt path")
+        mask = self._parse_lora_targets(targets)
+        return _native.lora_train(
+            self._handle, list(examples), output,
+            steps, lr, rank, alpha, n_pos, mask, rotate, probe, n_gen,
         )
 
     # ── Lifecycle ──────────────────────────────────────────────────
