@@ -184,11 +184,10 @@ class Model:
 
         Notes
         -----
-        The engine's trainer supports full-attention models **without
-        attention bias** (Qwen3-class). Qwen2/Qwen2.5 (which carry
-        q/k/v bias) raise ``RuntimeError`` with
-        ``AttentionBiasNotSupported`` — train those with a PyTorch
-        backend (see ``projects/minilora`` CPU/DML path) instead.
+        Supports the full-attention families covered by the engine
+        trainer: Qwen3-class (with per-head Q/K-norm) and
+        Qwen2/Qwen2.5 (no Q/K-norm, with attention projection bias —
+        wired through forward / backward / Adam since 2026-09-13).
         """
         if getattr(self, '_closed', False):
             raise RuntimeError("model is closed")
